@@ -16,7 +16,7 @@ public:
     //test functions
     void DataModule(uint8_t module);
     void OOKthdMode(uint8_t thdmode);
-    //void readAllRegs();
+    void readAllRegs();
 
     uint8_t myGroup;
 
@@ -162,15 +162,14 @@ int RF69A<SPI>::readStatus() {
         uint8_t f1 = readReg(REG_IRQFLAGS1);
         uint8_t f2 = readReg(REG_IRQFLAGS2);
         if (f1 & 0x08) {
-            //printf(BYTETOBINARYPATTERN, BYTETOBINARY(f1));
-            //printf("  ");
-            //printf(BYTETOBINARYPATTERN, BYTETOBINARY(f2));
-            //printf("  ");
+            //chprintf(serial, BYTETOBINARYPATTERN, BYTETOBINARY(f1));
+            //chprintf(serial, "  ");
+            //chprintf(serial, BYTETOBINARYPATTERN, BYTETOBINARY(f2));
+            //chprintf(serial, "  ");
             //fixthd += 1;
             //writeReg(0x1D, fixthd);
-            //printf("%02x %02x\r\n", fixthd, readRSSI());
+            chprintf(serial, "%02x %02x\r\n", fixthd, readRSSI());
         }
-        break;
     default:
         break;
     }
@@ -188,15 +187,15 @@ void RF69A<SPI>::setBW (uint8_t bw) {
 template< typename SPI >
 void RF69A<SPI>::setFrequency (uint32_t frq) {
     this->writeReg(REG_AFCFEI, (1<<1));
-    RF69<SPI>::setFrequency(frq);
+    //RF69<SPI>::setFrequency(frq);
 
-//    // accept any frequency scale as input, including KHz and MHz
-//    while (frq < 100000000)
-//        frq *= 10;
-//    uint64_t frf = ((uint64_t)frq << 8) / (32000000L >> 11);
-//    this->writeReg(REG_FRFMSB, frf >> 16);
-//    this->writeReg(REG_FRFMSB+1, frf >> 8);
-//    this->writeReg(REG_FRFMSB+2, frf);
+    // accept any frequency scale as input, including KHz and MHz
+    while (frq < 100000000)
+        frq *= 10;
+    uint64_t frf = ((uint64_t)frq << 8) / (32000000L >> 11);
+    this->writeReg(REG_FRFMSB, frf >> 16);
+    this->writeReg(REG_FRFMSB+1, frf >> 8);
+    this->writeReg(REG_FRFMSB+2, frf);
 }
 
 template< typename SPI >
@@ -214,7 +213,7 @@ template< typename SPI >
 void RF69A<SPI>::DataModule(uint8_t module) {
     this->setMode(MODE_SLEEP);
     this->writeReg(REG_DATAMOD, module);
-    //FIXME: chThdSleepMilliseconds(400);
+    chThdSleepMilliseconds(400);
     this->setMode(MODE_RECEIVE);
 }
 
@@ -225,21 +224,21 @@ void RF69A<SPI>::OOKthdMode(uint8_t thdmode) {
 
 
 //for debugging
-//template< typename SPI >
-//void RF69A<SPI>::readAllRegs() {
-////    uint8_t regVal;
-//
-//    printf("     0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  D"
-//    "\r\n00: 00");
-////    for (uint8_t regAddr = 1; regAddr <= 0x4F; regAddr++) {
-////        this->spi.enable();
-////        this->spi.transfer(regAddr & 0x7f);   // send address + r/w bit
-////        regVal = this->spi.transfer(0);
-////        this->spi.disable();
-////
-////        if (regAddr % 16 == 0)
-////        printf("\r\n%02X:", regAddr);
-////        printf(" %02x", regVal);
-////    }
-//    printf("\r\n");
-//}
+template< typename SPI >
+void RF69A<SPI>::readAllRegs() {
+    uint8_t regVal;
+
+    chprintf(serial, "     0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  D"
+    "\r\n00: 00");
+    for (uint8_t regAddr = 1; regAddr <= 0x4F; regAddr++) {
+        this->spi.enable();
+        this->spi.transfer(regAddr & 0x7f);   // send address + r/w bit
+        regVal = this->spi.transfer(0);
+        this->spi.disable();
+
+        if (regAddr % 16 == 0)
+        chprintf(serial, "\r\n%02X:", regAddr);
+        chprintf(serial, " %02x", regVal);
+    }
+    chprintf(serial, "\r\n");
+}

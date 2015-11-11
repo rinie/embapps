@@ -5,9 +5,14 @@
 *.elf
 *.hex
 *.bin
+*.launch
+*.log
 
 ##eclipse IDE
 #.project
 #.cproject
 .metadata
 #.settings
+
+raspi-apps/rf-ook-optimize
+
