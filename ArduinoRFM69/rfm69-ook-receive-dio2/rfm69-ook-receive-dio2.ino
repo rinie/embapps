@@ -14,7 +14,8 @@
 #define RF69_RX_DDR DDRD
 
 // Config items ------------------------------------------------------------
-#define FREQ_BAND 868 //868 or 433
+//#define FREQ_BAND 868 //868 or 433
+#define FREQ_BAND 433 //868 or 433
 #define SERIAL_BAUD 57600
 
 #if FREQ_BAND == 433
@@ -33,7 +34,7 @@ void printOOK (class DecodeOOK* decoder);
 #if FREQ_BAND == 433
 //433MHz
 #include "decoders433.h"
-//OregonDecoderV2   orscV2(  5, "ORSV2", printOOK);
+OregonDecoderV2   orscV2(  5, "ORSV2", printOOK);
 //CrestaDecoder     cres(    6, "CRES ", printOOK);
 KakuDecoder         kaku(    7, "KAKU ", printOOK);
 //XrfDecoder        xrf(     8, "XRF  ", printOOK);
@@ -42,16 +43,19 @@ KakuDecoder         kaku(    7, "KAKU ", printOOK);
 //FlamingoDecoder   flam(   11, "FMGO ", printOOK);
 //SmokeDecoder      smok(   12, "SMK  ", printOOK);
 //ByronbellDecoder  byro(   13, "BYR  ", printOOK);
-//KakuADecoder      kakuA(  14, "KAKUA", printOOK);
-WS249               ws249(  20, "WS249", printOOK);
-Philips             phi(    21, "PHI  ", printOOK);
+KakuADecoder      kakuA(  14, "KAKUA", printOOK);
+//WS249               ws249(  20, "WS249", printOOK);
+//Philips             phi(    21, "PHI  ", printOOK);
 OregonDecoderV1     orscV1( 22, "ORSV1", printOOK);
-//OregonDecoderV3   orscV3( 23, "ORSV3", printOOK);
+OregonDecoderV3   orscV3( 23, "ORSV3", printOOK);
 void setupDecoders() {
-  decoders[di++] = &ws249;
-  decoders[di++] = &phi;
+  //decoders[di++] = &ws249;
+  //decoders[di++] = &phi;
   decoders[di++] = &orscV1;
   decoders[di++] = &kaku;
+  decoders[di++] = &orscV2;
+  decoders[di++] = &orscV3;
+  decoders[di++] = &kakuA;
 }
 #else
 //868MHz
@@ -137,7 +141,7 @@ void printOOK (class DecodeOOK* decoder) {
         //Serial.print("  ");
     }
     last_print = now;
-    
+
   //Serial.println("");
   //Serial.print(hour());
   //printDigits(minute());
@@ -182,7 +186,7 @@ uint8_t fixthd = 65;
 uint32_t bitrate = 32768;
 uint8_t bw = 16; //0=250kHz, 8=200kHz, 16=167kHz, 1=125kHz, 9=100kHz, 17=83kHz 2=63kHz, 10=50kHz
 
-static void receiveOOK() {
+void receiveOOK() {
   //moving average buffer
   uint8_t avg_len = 5;
   uint32_t filter = 0;
