@@ -6,6 +6,14 @@
 // 2013-03-15 <info@sevenwatt.com> http://opensource.org/licenses/mit-license.php
 
 /// OOK decoder for WS249 plant humidity sensor.
+
+// WS249: Normal signals between 170 and 2600. Sync (space after high( between 5400 and 6100
+// 1: > 1600
+// 0: < 1600
+// ?: sync/gap-> OK
+// OK->TO. Error sync
+// T0: Data. Pos = bytes. >= 8 bytes: OK
+// Gap and
 class WS249 : public DecodeOOK {
   public:
     WS249 () {}
@@ -557,9 +565,9 @@ class XrfDecoder : public DecodeOOK {
     virtual int8_t decode (uint16_t width) {
       if (width > 2000 && pos >= 4)
         return 1;
-      if (width > 5000)
+      if (width > 6000) // 5000-> 6000
         return -1;
-      if (width > 4000 && state == UNKNOWN) {
+      if (width > 3500 && state == UNKNOWN) { // 4000 -> 3500
         state = OK;
         return 0;
       }

@@ -37,24 +37,24 @@ void printOOK (class DecodeOOK* decoder);
 OregonDecoderV2   orscV2(  5, "ORSV2", printOOK);
 //CrestaDecoder     cres(    6, "CRES ", printOOK);
 KakuDecoder         kaku(    7, "KAKU ", printOOK);
-//XrfDecoder        xrf(     8, "XRF  ", printOOK);
+XrfDecoder        xrf(     8, "XRF  ", printOOK);
 //HezDecoder        hez(     9, "HEZ  ", printOOK);
 //ElroDecoder       elro(   10, "ELRO ", printOOK);
 //FlamingoDecoder   flam(   11, "FMGO ", printOOK);
 //SmokeDecoder      smok(   12, "SMK  ", printOOK);
 //ByronbellDecoder  byro(   13, "BYR  ", printOOK);
 KakuADecoder      kakuA(  14, "KAKUA", printOOK);
-//WS249               ws249(  20, "WS249", printOOK);
+WS249               ws249(  20, "WS249", printOOK);
 //Philips             phi(    21, "PHI  ", printOOK);
-OregonDecoderV1     orscV1( 22, "ORSV1", printOOK);
-OregonDecoderV3   orscV3( 23, "ORSV3", printOOK);
+//OregonDecoderV1     orscV1( 22, "ORSV1", printOOK);
+//OregonDecoderV3   orscV3( 23, "ORSV3", printOOK);
 void setupDecoders() {
   //decoders[di++] = &ws249;
   //decoders[di++] = &phi;
-  decoders[di++] = &orscV1;
-  decoders[di++] = &kaku;
+  decoders[di++] = &xrf;
   decoders[di++] = &orscV2;
-  decoders[di++] = &orscV3;
+  decoders[di++] = &kaku;
+  decoders[di++] = &ws249;
   decoders[di++] = &kakuA;
 }
 #else
@@ -162,6 +162,9 @@ void printOOK (class DecodeOOK* decoder) {
   decoder->resetDecoder();
 }
 
+#define EDGE_TIMEOUT 15000 // was 10000
+#include "pulsespaceindex.h"
+
 void processBit(uint16_t pulse_dur, uint8_t signal, uint8_t rssi) {
   if (rssi) {
     if (signal) {
@@ -172,6 +175,11 @@ void processBit(uint16_t pulse_dur, uint8_t signal, uint8_t rssi) {
       rssi_buf[rssi_buf_i + 1] = rssi;
     }
   }
+#if 1 // Rinie get to know code
+	if (processBitRkr(pulse_dur, signal, rssi)) {
+		return;
+	}
+#endif
   for (uint8_t i = 0; decoders[i]; i++) {
     if (decoders[i]->nextPulse(pulse_dur, signal))
       decoders[i]->decoded(decoders[i]);
@@ -279,7 +287,7 @@ void receiveOOK() {
       last_edge = new_edge;
       last_data = data_out;
       flip_cnt++;
-    } else if (micros() - last_edge > 10000) {
+    } else if (micros() - last_edge > EDGE_TIMEOUT) {
       //send fake pulse to notify end of transmission to decoders
       processBit(micros() - last_edge, last_data, 0);
       processBit(1, !last_data, 0);
@@ -378,7 +386,7 @@ void receiveOOK() {
 
 void setup() {
   Serial.begin(SERIAL_BAUD);
-  Serial.print(F("\r\n[OOK-RX-dio2-poll]\r\n"));
+  Serial.print(F("\r\n[OOK-RX-dio2-poll 433 57600]\r\n"));
   setupDecoders();
   if (di>max_decoders)
   Serial.print(F("ERROR: decoders-array too small. Memory corruption."));
