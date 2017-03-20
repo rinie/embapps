@@ -94,8 +94,8 @@ void printHex(int val) {
 #define RSSI_BUF_SIZE  (1<<RSSI_BUF_EXP)
 uint8_t rssi_buf[RSSI_BUF_SIZE];
 uint8_t rssi_buf_i = 0;
-
-void printRSSI() {
+#define RKR_RSSI_MIN (80)
+int printRSSI() {
   uint16_t avgonrssi = 0;
   uint16_t avgoffrssi = 0;
   for (uint8_t i = 0; i < RSSI_BUF_SIZE; i += 2) {
@@ -112,6 +112,9 @@ void printRSSI() {
   Serial.print("/");
   Serial.print(avgonrssi >> RSSI_BUF_EXP - 1);
   Serial.print(")");
+  // noise or signal?
+  return ((avgonrssi >> RSSI_BUF_EXP - 1) < RKR_RSSI_MIN && (avgoffrssi >> RSSI_BUF_EXP - 1) < RKR_RSSI_MIN) ? 0 : 1;
+
 }
 
 void printOOK (class DecodeOOK* decoder) {
@@ -405,6 +408,42 @@ void setup() {
 
 }
 
+#if 1
 void loop() {
     receiveOOK();
 }
+#else
+void loop() {
+	// fix damn sort/merge code
+	uint micromin[] = {660,  88, 268, 1092, 448,  864, 620};
+	uint micromax[] = {860, 264, 444, 1472, 616, 1036, 652};
+	uint mm[] = {0,0,0,0,0,0, 0};
+	byte  data[] = {
+		0, 1, 0, 0, 0, 2, 0, 0, 0, 2, 1, 2, 1, 2, 1, 1, 3, 1, 4, 1, 0, 1, 0, 0, 0, 4, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 4, 1, 2, 4, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 2, 4, 1, 1, 1, 2, 0, 0, 1, 2, 2, 2, 0, 4, 0, 0, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 2, 2, 2, 1, 0, 1, 0, 0, 2, 2, 1, 4, 2, 4, 2, 2, 1, 1, 1, 2, 1, 1, 2, 5,
+		/* 0, 0, 1, 1, 1, 1, 1, 1, 1, 2, 4, 2, 4, 2, 1, 1, 2, 2, 4, 1, 4, 1, 1, 4, 1, 1, 1, 2, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 2, 1, 0, 2, 1, 2, 2, 1, 1, 1, 0, 1, 1, 1, 1, 2, 2, 1, 2, 1, 1, 1, 1, 4, 1, 1, 2, 2, 2, 1, 0, 1, 2, 1, 2, 1, 4, 2, 0, 4, 1, 2, 2, 1, 1, 1, 1, 1, 1, 2, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 0, 4, 1, 1, 1, 4, 1, 1, 1, 2, 2, 1, 1, 2, 1, 2, 1, 0, 1, 2, 0, 2, 2, 1, 1, 1, 4, 1, 4, 2, 2, 1, 2, 4, 1, 1, 2, 1, 1, 1, 1, 1, 1, 2, 2, 4, 1, 2, 4, 2, 1, 1, 2, 1, 1, 1, 1, 2, 4, 6,
+		 1, 2, 2, 1, 2, 2, 4, 1, 2, 1, 1, 1, 2, 1, 0, 1, 1, 1, 1, 1, 1, 1, 4, 4, 2, 1, 2, 1, 2, 0, 1, 5,
+		2, 1, 4, 1, 1, 2, 1, 1, 2, 1, 0, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 2, 2, 1, 1, 1, 1, 2, 1, 1, 1, 0, 2, 2, 1, 0, 1, 1, 0, 1, 1, 1, 2, 1, 1, 2, 1, 1, 2, 2, 4, 1, 1, 0, 1, 1, 1, 1, 2, 1, 2, 2, 1, 2, 1, 2, 1, 1, 1, 4, 2, 4, 6, 1, 1, 2, 0, 2, 2, 1, 1, 2, 5,
+		4, 2, 1, 2, 1, 1, 1, 4, 1, 1, 1, 1, 1, 2, 1, 1, 6, 2, 2, 1, 1, 1, 1, 1, 2, 2, 4, 1, 1, 1, 1, 0, 1, 2, 1, 1, 2, 4, 1, 1, 1, 1, 4, 2, 1, 1, 2, 6, 2, 1, 2, 1, 1, 1, 2, 2, 1, 5,
+		1, 1, 1, 2, 1, 2, 1, 2, 4, 1, 1, 2, 1, 1, 1, 1, 1, 4, 1, 1, 1, 2, 1, 4, 2, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 1, 2 */ };
+	for (uint i = 0; i < NRELEMENTS(data); i++) {
+		uint pulse_dur;
+		byte ix = data[i];
+		if (mm[ix] == 0) {
+			pulse_dur = micromin[ix];
+			mm[ix] = 1;
+		}
+		else if (mm[ix] == 1) {
+			pulse_dur = micromax[ix];
+			mm[ix] = 2;
+		}
+		else {
+			// perfect average
+			pulse_dur = micromin[ix] + micromax[ix] / 2;
+		}
+		processBitRkr(pulse_dur, (i + 1) % 2, 1);
+	}
+	// fake end
+	processBitRkr(1, 0, 0);
+	delay(10000);
+}
+#endif
