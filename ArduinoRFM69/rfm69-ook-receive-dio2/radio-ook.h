@@ -486,16 +486,16 @@ void RF69A::printHex(int val) {
 void RF69A::readAllRegs() {
     uint8_t regVal;
 
-    Serial.println("     0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  D");
-    Serial.print("00: 00");
+    Serial.println(F("     0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F"));
+    Serial.print(F("00: 00"));
     for (uint8_t regAddr = 1; regAddr <= 0x4F; regAddr++) {
         regVal = readReg(regAddr);
         if (regAddr % 16 == 0) {
           Serial.println();
           printHex(regAddr);
-        Serial.print(":");
+        Serial.print(F(":"));
         }
-        Serial.print(" ");
+        Serial.print(F(" "));
         printHex(regVal);
     }
     Serial.println();
