@@ -64,6 +64,9 @@
  *  		NodeDue: Encoding volgens Princeton PT2262 / MOSDESIGN M3EB / Domia Lite spec.
  *  		Pulse (T) is 350us PWDM
  *  		0 = T,3T,T,3T, 1 = T,3T,3T,T, short 0 = T,3T,T,T
+ *
+ *			P2S2 encoding 0 = 0101, 1 = 0110, short = 0100
+ *
  * 		Timings theoretical: 350, 1050
  *
  *		Jeelabs: Split 700, Gap 2500
@@ -76,6 +79,7 @@
  *		Timings theoretical: 275, 1100, 2200
  *
  *		Jeelabs: Split 700, 1900, Max 3000
+ *		P1S2 encoding 0 = 01, 1 = 10 and dim = 00
  *
  *	XRF / X10:
  *		http://davehouston.net/rf.htm
@@ -137,10 +141,8 @@ byte psiNibbles[512]; // psiCount pulseIndex << 4 | spaceIndex
 #define psiNibblePulse(psiNibbles, i) (((psiNibbles)[(i)] >> 4) & 0x0F)
 #define psiNibbleSpace(psiNibbles, i) (((psiNibbles)[(i)]) & 0x0F)
 #define psPulseSpaceNibble(pulse, space) ((((pulse) & 0x0F) << 4) | ((space) & 0x0F))
-#define psiNibblePS(psiNibbles, j) ((j) & 1) ? psiNibbleSpace(psiNibbles, (uint)((j) / 2)) : psiNibblePuls(psiNibbles, (uint)((j) / 2))
+#define psiNibblePS(psiNibbles, j) (((j) & 1) ? psiNibbleSpace(psiNibbles, (uint)((j) / 2)) : psiNibblePulse(psiNibbles, (uint)((j) / 2)))
 
-uint jDataMax = 0;
-uint jDataCount = 0;
 uint jDataStart[8];
 uint jDataEnd[8];
 
@@ -245,15 +247,12 @@ static void psiSortMergeMicroMinMax() {
 void psiPrint() {
 	uint psCount;
 	bool fPrintHex = false;
-	//digitalWrite(MonitorLedPin,HIGH);
-	//uint psniStart = 0;
-	//uint psniSize = psiNibbles[psniStart];
-	//uint psniSize = psiCount -1;
-	//psCount = (psniSize * 2) - (((psiNibbleSpace(psiNibbles, psniSize)) == PSI_OVERFLOW) ? 1 : 0);
+
 	psCount = psiCount * 2;
 	Serial.print((fIsRf)? F("RF receive "): F("IR receive "));
 	PrintChar('*');
 	Serial.print(psCount);
+	// 1 report total count pulse space and pulse+space to check psixCount and psiCount
 	uint psxCount[PSIXNRELEMENTS];
 	for (uint ix = 0; ix < PSIXNRELEMENTS; ix++) {
 		psxCount[ix] = 0;
@@ -264,16 +263,21 @@ void psiPrint() {
 	PrintNum(psxCount[psixPulseSpace], '?', 1);
 	PrintNum(psxCount[psixPulse], '(', 1);
 	PrintNum(psxCount[psixSpace], ',', 1);
-	Serial.print(F(")("));
-	// data/syncGap seperation detection
-	// RF receive *392(196,196,0,1)[0*7(7,0):300/304 1*190(155,35):308/708 2*3(3,0):756/812 3*185(31,154):1012/1104 4*7(0,7):9900/10076 ]
-	//typedef enum {psixPulse, psixSpace, psixPulseSpace, PSIXNRELEMENTS} psiIx; //
+
+	// 2 determine per pulse/space/pulse+space what Short/Long timing is. Gap > psiDataLong
+	// Short/Long should occur more frequently than GAPS so top 2 of frequency
 	uint psiDataShort[PSIXNRELEMENTS];
 	uint psiCountDataShort[PSIXNRELEMENTS];
+
 	uint psiDataLong[PSIXNRELEMENTS];
 	uint psiCountDataLong[PSIXNRELEMENTS];
+
+	uint psiCountData[PSIXNRELEMENTS];
+	uint psiCountDataMin = 16; // min count for data, max count for Gap
 	uint psiCountGapMax;
+
 	for (uint ix = 0; ix < PSIXNRELEMENTS; ix++) {
+		// init DataShort/DataLong with 0 and 1 but for psixPulseSpace with max individual values
 		psiDataShort[ix] = (ix < psixPulseSpace) ? 0 : max(psiDataShort[psixPulse], psiDataShort[psixSpace]);
 		psiCountDataShort[ix] = psixCount[psiDataShort[ix]][ix];
 		psiDataLong[ix] = (ix < psixPulseSpace) ? 1 : max(psiDataLong[psixPulse], psiDataLong[psixSpace]);
@@ -281,8 +285,8 @@ void psiPrint() {
 		psiCountGapMax = 0;
 		for (uint i=psiDataLong[ix] + 1; i < psMinMaxCount; i++) {
 			uint psiCount = psixCount[i][ix];
-			if (psiCount > psiCountDataLong[ix]) {
-				if (psiCountDataLong[ix] > psiCountDataShort[ix]) {
+			if (psiCount > psiCountDataLong[ix]) { // new 1st max frequency, new long
+				if (psiCountDataLong[ix] > psiCountDataShort[ix]) { // Old Long -> new Short only if occurs more
 					psiDataShort[ix] = psiDataLong[ix];
 					psiCountDataShort[ix] = psiCountDataLong[ix];
 				}
@@ -290,28 +294,48 @@ void psiPrint() {
 				psiCountDataLong[ix] = psiCount;
 				psiCountGapMax = 0;
 			}
-			else if (psiCount > psiCountDataShort[ix]) {
+			else if (psiCount > psiCountDataShort[ix]) { // new 2nd max frequency, shift long->short, long new value
 				psiDataShort[ix] = psiDataLong[ix];
 				psiCountDataShort[ix] = psiCountDataLong[ix];
 				psiDataLong[ix] = i;
 				psiCountDataLong[ix] = psiCount;
 				psiCountGapMax = 0;
 			}
-			else if (psiCount > psiCountGapMax) {
+			else if (psiCount > psiCountGapMax) {	// i is GAP index, record max
 				psiCountGapMax = psiCount;
 			}
 		}
+
+		if (ix < psixPulseSpace) {
+			psiCountData[ix] = 0;
+			for (uint i=0; i < psMinMaxCount; i++) {
+				uint psiCount = psixCount[i][ix];
+				if (psiCount > psiCountDataMin) {
+					psiCountData[ix] += 1;
+				}
+			}
+		}
+		else { // psixPulseSpace max of individual values
+			psiCountData[ix] = max(psiCountData[psixPulse], psiCountData[psixSpace]);
+		}
+#if 0
 		PrintNum(psiDataShort[ix], ',', 1);
 		PrintNum(psiDataLong[ix], ',', 1);
 		PrintNum(psiCountGapMax, '*', 1);
+		PrintNum(psiCountData[ix], '*', 1);
+#endif
 	}
+
+	// real data should occur more than psiCountGapMax otherwise single data timing
 	for (uint ix = 0; ix < PSIXNRELEMENTS-1; ix++) {
 		if (psiCountDataLong[ix] < psiCountGapMax) {
 				psiDataShort[ix] = psiDataLong[ix];
 				psiCountDataLong[ix] += psiCountDataShort[ix];
 				psiCountDataShort[ix] = 0;
+				psiCountData[ix] = 1;
 		}
 	}
+	// 3 report frequency per index value P+S/P/S and the min/max timing
 	Serial.print(F(")["));
 	for (uint i=0; i < psMinMaxCount; i++) {
 		PrintNum(i, 0, 1);
@@ -326,78 +350,341 @@ void psiPrint() {
 	Serial.print(F("]"));
 	Serial.println();
 	uint j = 0;
+
 #if 1
-	// preamble/sync/gap lengths
+	// 4 preamble/sync/gap lengths
+	// Todo: start gap max 16, keep last long
+	// End gap max 1, keep last long
+	// ? Rely on pulse/space?: not yet
 	Serial.print(F("Gap Intervals "));
-	if (psiDataShort[psixPulse] == psiDataLong[psixPulse]) {
-		Serial.print(F("Single Pulse "));
-	}
-	else if (psiDataShort[psixSpace] == psiDataLong[psixSpace]) {
-		Serial.print(F("Single Space "));
-	}
-	uint jMax = 32; // min package length
+	PrintNum(psiCountData[psixPulse], 'P', 1);
+	PrintNum(psiCountData[psixSpace], 'S', 1);
+
 	uint jMaxCount = 0; // likely number of packages
-	uint jPreStart, jStart, jEnd;
+//	uint jPreStart, jStart, jEnd;
 	uint jMatchCount = 0; // likely number of packages
+	uint jDataMax = 0;
+	uint jDataCount = 0;
+	uint jMax = 32; // min package length
 	for (uint i=0; i < psiCount; i++, j++) {
 		byte pulse = psiNibblePulse(psiNibbles, i);
 		byte space = psiNibbleSpace(psiNibbles, i);
-		if ((pulse > psiDataLong[psixPulse]) /* && j > 16*/) { // sync pulse
-			uint jj = j * 2;
-			if (jj > jMax) {
-				if (jj > jMax + 4) {
-					jMaxCount = 0;
+
+		for (uint ix = 0; ix < PSIXNRELEMENTS; ix++) {
+			byte ps = (ix == psixPulse) ? pulse : space;
+
+			if (ps > psiDataLong[ix]) { // GAP (no data)
+				uint jj = j * 2 + ix;
+				if (jj > jMax) {
+					if (jj > jMax + 4) { // start/end of package may be garbled so allow 4 tolerance
+						jMaxCount = 0; // discard old
+					}
+					jMax = jj;
+					jDataMax = jMax;
 				}
-				jMax = jj;
-				jDataMax = jMax;
-			}
-			if (jj >= jMax - 4) {
-				uint ii = i * 2;
-				if (jMaxCount < NRELEMENTS(jDataEnd)) {
-					jDataEnd[jMaxCount] = ii;
-					jDataStart[jMaxCount] = ii - jj;
-					jDataCount = jMaxCount + 1;
+				if (jj >= jMax - 4) { // start/end of package may be garbled so allow 4 tolerance
+					uint ii = i * 2 + ix;
+					if (jMaxCount < NRELEMENTS(jDataEnd)) {
+						jDataEnd[jMaxCount] = ii;
+						jDataStart[jMaxCount] = ii - jj;
+						jDataCount = jMaxCount + 1;
+					}
+					jMaxCount++;
 				}
-				jMaxCount++;
+				//j = (jj < 16) ? 1 : 0; // include start GAP ?
+				j = 0;
 			}
-			j = 0;
-		}
-		if (space > psiDataLong[psixSpace]) {
-			uint jj = j * 2 + 1;
-			if (jj > jMax) {
-				if (jj > jMax + 4) {
-					jMaxCount = 0;
-				}
-				jMax = jj;
-				jDataMax = jMax;
-			}
-			if (jj >= jMax - 4) {
-				uint ii = i * 2 + 1;
-				if (jMaxCount < NRELEMENTS(jDataEnd)) {
-					jDataEnd[jMaxCount] = ii;
-					jDataStart[jMaxCount] = ii - jj;
-					jDataCount = jMaxCount + 1;
-				}
-				jMaxCount++;
-			}
-			j = 0;
 		}
 	}
-	PrintNum(jMaxCount, '#', 1);
-	PrintNum(jMax, '*', 2);
-	PrintNum(jPreStart, '[', 2);
-	PrintNum(jStart, '*', 2);
-	PrintNum(jEnd, ':', 2);
-	PrintChar(']');
-	PrintChar(':');
 	if ((jMax <= 64) && (jMaxCount < 2)) {
 		Serial.println(F(" Assume Noise"));
 		return;
 	}
-	if (jMaxCount > 1) { //assume repeated packages
-		j = 0;
+	PrintNum(jMaxCount, '#', 1);
+	PrintNum(jMax, '*', 2);
+//	PrintNum(jPreStart, '[', 2);
+//	PrintNum(jStart, '*', 2);
+//	PrintNum(jEnd, ':', 2);
+//	PrintChar(']');
+	PrintChar(':');
+	// repeated packages, 1 or 2 pulse data values and 1 or 2 space data values
+	fPrintHex = ((jMax >= 64) || (jMaxCount > 1)) && (psiCountData[psixPulse] <= 2) && (psiCountData[psixSpace] <= 2);
+	byte hexData = 0;
+#if 1
+		// http://www.atmel.com/images/atmel-9164-manchester-coding-basics_application-note.pdf
+		// Atmel http://www.atmel.com/Images/doc9164.pdf
+		// Timing Based Manchester Decode
+	bool fTryManchester = (psiCountData[psixPulse] == 2) && (psiCountData[psixSpace] == 2);
+	bool fDoubleInvertedBits = false; //my Oregon Scientific V2 sensor
+	if (fTryManchester) {
+		for (uint j = 0; j < jMaxCount; j++) {
+			bool fLastWasData = false;
+			bool fLastWasLong = false;
+			byte hexData = 0;
+			byte nHexData = 0;
+			uint jDataLen = jDataEnd[j] - jDataStart[j] + 1;
+			uint k;
+			byte psJJPrev = 1;
+			byte bitVal;
+			byte prevBitVal;
+			boolean fSecondBit = false;
+
+			// find start of long->short crossing
+			for (k = 0; k < jDataLen; k++) {
+				uint jj = jDataStart[j] + k;
+				uint ix = (jj & 1) ? psixSpace : psixPulse;
+				byte psJJ = (jj & 1) ? psiNibbleSpace(psiNibbles, jj/2) : psiNibblePulse(psiNibbles, jj/2);
+				psJJ = ((psiCountData[ix] <= 2) && (psJJ <= psiDataShort[ix]))
+					? 0 : ((psJJ <= psiDataLong[ix]) ? 1 : psJJ);
+				if (psJJ == 0) {
+					bitVal = (ix == psixPulse) ? 1 : 0;
+					psJJPrev = 0;
+					break;
+				}
+			}
+			//PrintNum(k, 'M', 2);
+			if ((psJJPrev == 0) && k > 8) {
+				PrintNum(k, 'M', 2);
+				for (;k < jDataLen; k++) {
+					uint jj = jDataStart[j] + k;
+					uint ix = (jj & 1) ? psixSpace : psixPulse;
+					byte psJJ = (jj & 1) ? psiNibbleSpace(psiNibbles, jj/2) : psiNibblePulse(psiNibbles, jj/2);
+					psJJ = ((psiCountData[ix] <= 2) && (psJJ <= psiDataShort[ix]))
+						? 0 : ((psJJ <= psiDataLong[ix]) ? 1 : psJJ);
+					// Compare stored count value with T (0)
+					if (psJJ == 0) {
+						// Capture next edge and make sure this value also = T (else error)
+						if (k + 1 < jDataLen) {
+							k++;
+							jj = jDataStart[j] + k;
+							ix = (jj & 1) ? psixSpace : psixPulse;
+							psJJ = (jj & 1) ? psiNibbleSpace(psiNibbles, jj/2) : psiNibblePulse(psiNibbles, jj/2);
+							psJJ = ((psiCountData[ix] <= 2) && (psJJ <= psiDataShort[ix]))
+								? 0 : ((psJJ <= psiDataLong[ix]) ? 1 : psJJ);
+							if (psJJ == 0) {
+								// Next bit = current bit
+								bitVal = (bitVal) ? 1 : 0;
+								if (fDoubleInvertedBits) {
+									if (fSecondBit) {
+										if (bitVal == prevBitVal) {
+											break; // no DoubleInvertedBits
+										}
+										fSecondBit = false;
+									}
+									else {
+										prevBitVal = bitVal;
+										fSecondBit = true;
+										continue; // only second bit is used for value
+									}
+								}
+								hexData = (hexData << 1) | (bitVal & 1);
+								nHexData++;
+								if (nHexData > 7) {
+									//Serial.print(hexData, HEX);
+									PrintNumHex(hexData, 0, 2);
+									hexData = 0;
+									nHexData = 0;
+								}
+							}
+							else {
+								break; // no manchester
+							}
+						}
+					}
+					else if (psJJ == 1) {
+						// Next bit = opposite of current bit
+						bitVal = (bitVal) ? 0 : 1;
+						if (fDoubleInvertedBits) {
+							if (fSecondBit) {
+								if (bitVal == prevBitVal) {
+									break; // no DoubleInvertedBits
+								}
+								fSecondBit = false;
+							}
+							else {
+								prevBitVal = bitVal;
+								fSecondBit = true;
+								continue; // only second bit is used for value
+							}
+						}
+						// Return next bit
+						hexData = (hexData << 1) | (bitVal & 1);
+						nHexData++;
+						if (nHexData > 7) {
+							//Serial.print(hexData, HEX);
+							PrintNumHex(hexData, 0, 2);
+							hexData = 0;
+							nHexData = 0;
+						}
+				}
+			}
+			fLastWasData = nHexData > 0;
+			if (fPrintHex && fLastWasData) {
+				//Serial.print(hexData,HEX);
+				PrintNumHex(hexData, 0, 2);
+				PrintChar(' ');
+				fLastWasData = false;
+			}
+			Serial.println();
+		}
 	}
-	j = 0;
+	}
+#endif
+	if (jMaxCount > 1) { //assume repeated packages
+		uint jDataRepeat = 0;
+		uint j = 0;
+		// try all packages, print last match incl surrounding gaps, continue at first non match
+		for (uint i = 0; i < jMaxCount; i++) {
+			uint iDataRepeat = 0;
+			uint jLast = 0;
+			uint iNext = jMaxCount-1;
+			uint iDataLen = jDataEnd[i] - jDataStart[i] + 1;
+			for (uint j = i + 1; j < jMaxCount; j++) {
+				uint jDataLen = jDataEnd[j] - jDataStart[j] + 1;
+				if (jDataLen == iDataLen) {
+					uint k;
+					for (k = 0; k < jDataLen; k++) {
+						uint ii = jDataStart[i] + k;
+						uint jj = jDataStart[j] + k;
+						byte psII = (ii & 1) ? psiNibbleSpace(psiNibbles, ii/2) : psiNibblePulse(psiNibbles, ii/2);
+						byte psJJ = (jj & 1) ? psiNibbleSpace(psiNibbles, jj/2) : psiNibblePulse(psiNibbles, jj/2);
+						uint ix = (ii & 1) ? psixSpace : psixPulse;
+						if (psII > psiDataLong[ix]) {
+							psII = psiDataLong[ix] + 1; // single gap value
+						}
+						else { // clip 2 DataValues to 0 and 1
+							psII = ((psiCountData[ix] <= 2) && (psII <= psiDataShort[ix]))
+								? 0 : ((psII <= psiDataLong[ix]) ? 1 : psII);
+						}
+						ix = (jj & 1) ? psixSpace : psixPulse;
+						if (psJJ > psiDataLong[ix]) {
+							psJJ = psiDataLong[ix] + 1; // single gap value
+						}
+						else { // clip 2 DataValues to 0 and 1
+							psJJ = ((psiCountData[ix] <= 2) && (psJJ <= psiDataShort[ix]))
+								? 0 : ((psJJ <= psiDataLong[ix]) ? 1 : psJJ);
+						}
+
+						if (psII != psJJ) { // no match
+							if (iNext > j - 1) {
+								iNext = j - 1;
+							}
+							break;
+						}
+					}
+					if (k >= jMax - 2) {
+						jDataRepeat++;
+						iDataRepeat++;
+						jLast = j;
+					}
+				}
+				else {
+					if (iNext > j - 1) {
+						iNext = j - 1;
+					}
+				}
+			}
+			if (iDataRepeat > 0) { // matching packages, print last
+				j = jLast;
+				uint jDataLen = jDataEnd[j] - jDataStart[j] + 1;
+				for (byte l = 0; l < 2; l++) {
+					bool fLastWasData = false;
+					bool fLastWasSpaceLong = false;
+					byte hexData = 0;
+					byte nHexData = 0;
+					bool lsbFirst = (l == 1);
+					uint k;
+					Serial.println();
+					PrintChar((lsbFirst) ? 'L' : 'M');
+					PrintNum(i, '[', 1);
+					PrintNum(jDataLen, '!', 2);
+					PrintNum(iDataRepeat, '*', 2);
+					PrintChar(' ');
+					for (k = 0; k < jDataLen; k++) {
+						uint jj = jDataStart[j] + k;
+						byte psJJ = (jj & 1) ? psiNibbleSpace(psiNibbles, jj/2) : psiNibblePulse(psiNibbles, jj/2);
+						uint ix = (jj & 1) ? psixSpace : psixPulse;
+#if 0
+						//PrintNum(k, '=', 2);
+						psJJ = ((psiCountData[ix] <= 2) && (psJJ <= psiDataShort[ix]))
+							? 0 : ((psJJ <= psiDataLong[ix]) ? 1 : psJJ);
+						Serial.print(psJJ, HEX);
+#endif
+						if (psJJ > psiDataLong[ix]) {
+							if (fPrintHex && fLastWasData) {
+								if (nHexData > 0) {
+									//Serial.print(hexData,HEX);
+									PrintNumHex(hexData, 0, 2);
+								}
+								PrintChar(' ');
+								hexData = 0;
+								nHexData = 0;
+							}
+							fLastWasData = false;
+							Serial.print(psJJ,HEX);
+							PrintChar(' ');
+						}
+						else if (psiCountData[ix] != 1) {
+							psJJ = ((psiCountData[ix] <= 2) && (psJJ <= psiDataShort[ix]))
+								? 0 : ((psJJ <= psiDataLong[ix]) ? 1 : psJJ);
+							if (fPrintHex) {
+								if (!fLastWasData) {
+									PrintChar(' ');
+									hexData = 0;
+									nHexData = 0;
+								}
+								if (lsbFirst) {
+									hexData = ((hexData >> 1)| (((psJJ & 1)) ? 0x80 : 0) & 0xFF);
+								}
+								else {
+									hexData = ((hexData << 1)| (((psJJ & 1)) ? 1 : 0) & 0xFF);
+								}
+								nHexData++;
+								if (nHexData > 7) {
+									//Serial.print(hexData, HEX);
+									PrintNumHex(hexData, 0, 2);
+									hexData = 0;
+									nHexData = 0;
+								}
+							}
+							else {
+								Serial.print(psJJ, HEX);
+							}
+							fLastWasData = true;
+						}
+						else {
+								fLastWasData = true;
+						}
+					}
+					if (fPrintHex && fLastWasData) {
+						if (nHexData > 0) {
+							//Serial.print(hexData,HEX);
+							PrintChar(' ');
+							PrintNumHex(hexData, 0, 2);
+						}
+						PrintChar(' ');
+						fLastWasData = false;
+						hexData = 0;
+						nHexData = 0;
+					}
+				}
+				i = iNext;
+			}
+		}
+		Serial.println();
+		Serial.print(F("DataRepeat"));
+		PrintNum(jDataRepeat, ' ', 1);
+#if 0
+		for (uint i = 0; i < jMaxCount; i++) {
+			PrintNum(i, '[', 2);
+			PrintNum(jDataEnd[i] - jDataStart[i], '!', 2);
+			PrintNum(jDataStart[i], '*', 2);
+			PrintNum(jDataEnd[i], ':', 2);
+			PrintChar(']');
+		}
+#endif
+	}
+#if 0
 	for (uint i=0; i < psiCount; i++, j++) {
 		byte pulse = psiNibblePulse(psiNibbles, i);
 		byte space = psiNibbleSpace(psiNibbles, i);
@@ -418,6 +705,82 @@ void psiPrint() {
 			j = 0;
 		}
 	}
+#endif
+	j = 0;
+#if 0
+	bool fLastWasData = false;
+	bool fLastWasSpaceLong = false;
+	if (fPrintHex) {
+		PrintChar(' ');
+		j = 0;
+		byte hexData = 0;
+		for (uint i=0; i < psiCount; i++) {
+			byte pulse = psiNibblePulse(psiNibbles, i);
+			byte space = psiNibbleSpace(psiNibbles, i);
+
+			pulse = ((psiCountData[psixPulse] == 2) && (pulse <= psiDataShort[psixPulse]))
+				? 0 : ((pulse <= psiDataLong[psixPulse]) ? 1 : pulse);
+			space = ((psiCountData[psixSpace] == 2) && (space <= psiDataShort[psixSpace]))
+				? 0 : ((space <= psiDataLong[psixSpace]) ? 1 : space);
+			if (fLastWasSpaceLong && !(space > psiDataLong[psixSpace])) {
+				Serial.println();
+				fLastWasSpaceLong = false;
+			}
+			if (pulse > psiDataLong[psixPulse]) {
+				if (fLastWasData) {
+					Serial.print(hexData,HEX);
+					PrintChar(' ');
+				}
+				Serial.print(pulse,HEX);
+				fLastWasData = false;
+			}
+			else if (psiCountData[psixPulse] != 1) {
+				if (!fLastWasData) {
+					PrintChar(' ');
+					hexData = 0;
+					j = 0;
+				}
+				hexData = (hexData << 1) | (pulse & 1);
+				j++;
+				//Serial.print(pulse,HEX);
+				if (j > 7) {
+					//PrintChar(' ');
+					Serial.print(hexData,HEX);
+					hexData = 0;
+					j = 0;
+				}
+				fLastWasData = true;
+			}
+
+			if (space > psiDataLong[psixSpace]) {
+				if (fLastWasData) {
+					Serial.print(hexData,HEX);
+					PrintChar(' ');
+				}
+				fLastWasSpaceLong = true;
+				Serial.print(space,HEX);
+				fLastWasData = false;
+			}
+			else if (psiCountData[psixSpace] != 1) {
+				if (!fLastWasData) {
+					PrintChar(' ');
+					hexData = 0;
+					j = 0;
+				}
+				//Serial.print(space,HEX);
+				hexData = (hexData << 1) | (space & 1);
+				j++;
+				if (j > 7) {
+					//PrintChar(' ');
+					Serial.print(hexData,HEX);
+					hexData = 0;
+					j = 0;
+				}
+				fLastWasData = true;
+			}
+		}
+	}
+#endif
 	Serial.println();
 	j = 0;
 #endif
@@ -425,22 +788,30 @@ void psiPrint() {
 		byte pulse = psiNibblePulse(psiNibbles, i);
 		byte space = psiNibbleSpace(psiNibbles, i);
 
-		pulse = (pulse <= psiDataShort[psixPulse]) ? 0 : ((pulse <= psiDataLong[psixPulse]) ? 1 : pulse);
-		space = (space <= psiDataShort[psixSpace]) ? 0 : ((space <= psiDataLong[psixSpace]) ? 1 : space);
+		pulse = ((psiCountData[psixPulse] == 2) && (pulse <= psiDataShort[psixPulse]))
+			? 0 : ((pulse <= psiDataLong[psixPulse]) ? 1 : pulse);
+		space = ((psiCountData[psixSpace] == 2) && (space <= psiDataShort[psixSpace]))
+			? 0 : ((space <= psiDataLong[psixSpace]) ? 1 : space);
 
-		if ((pulse > psiDataLong[psixPulse]) && ((j > 16) || (psiDataShort[psixPulse] == psiDataLong[psixPulse]))) { // sync pulse
+		if ((pulse > psiDataLong[psixPulse]) && ((j > 16))) { // sync pulse
 			Serial.println();
 			j = 0;
 		}
-
-		if ((psiDataShort[psixPulse] != psiDataLong[psixPulse]) || (pulse > psiDataLong[psixPulse])) {
+		if (pulse > psiDataLong[psixPulse]) {
 			Serial.print(pulse,HEX);
 		}
-		if ((psiDataShort[psixSpace] != psiDataLong[psixSpace]) ||  (space > psiDataLong[psixSpace])) {
+		else if (psiCountData[psixPulse] != 1) {
+			Serial.print(pulse,HEX);
+		}
+
+		if (space > psiDataLong[psixSpace]) {
+			Serial.print(space,HEX);
+		}
+		else if (psiCountData[psixSpace] != 1) {
 			Serial.print(space,HEX);
 		}
 
-		if ((space > psiDataLong[psixSpace]) && ((j > 16)) || ((psiDataShort[psixSpace] == psiDataLong[psixSpace]))) { // long gap
+		if ((space > psiDataLong[psixSpace]) && ((j > 16))) { // long gap
 			Serial.println();
 			j = 0;
 		}

@@ -165,7 +165,7 @@ void printOOK (class DecodeOOK* decoder) {
   decoder->resetDecoder();
 }
 
-#define EDGE_TIMEOUT 15000 // was 10000
+#define EDGE_TIMEOUT 16000 // was 10000
 #include "pulsespaceindex.h"
 
 void processBit(uint16_t pulse_dur, uint8_t signal, uint8_t rssi) {
