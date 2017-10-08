@@ -410,7 +410,7 @@ void psiPrint() {
 	// repeated packages, 1 or 2 pulse data values and 1 or 2 space data values
 	fPrintHex = ((jMax >= 64) || (jMaxCount > 1)) && (psiCountData[psixPulse] <= 2) && (psiCountData[psixSpace] <= 2);
 	byte hexData = 0;
-#if 1
+#if 0 // disable try manchester
 		// http://www.atmel.com/images/atmel-9164-manchester-coding-basics_application-note.pdf
 		// Atmel http://www.atmel.com/Images/doc9164.pdf
 		// Timing Based Manchester Decode
@@ -674,116 +674,31 @@ void psiPrint() {
 		Serial.println();
 		Serial.print(F("DataRepeat"));
 		PrintNum(jDataRepeat, ' ', 1);
-#if 0
-		for (uint i = 0; i < jMaxCount; i++) {
-			PrintNum(i, '[', 2);
-			PrintNum(jDataEnd[i] - jDataStart[i], '!', 2);
-			PrintNum(jDataStart[i], '*', 2);
-			PrintNum(jDataEnd[i], ':', 2);
-			PrintChar(']');
-		}
-#endif
 	}
-#if 0
-	for (uint i=0; i < psiCount; i++, j++) {
-		byte pulse = psiNibblePulse(psiNibbles, i);
-		byte space = psiNibbleSpace(psiNibbles, i);
-		if ((pulse > psiDataLong[psixPulse]) /* && j > 16*/) { // sync pulse
-			uint jj = j * 2;
-			//PrintNum(i*2, 'P', 1);
-			PrintNum(jj, 'P', 1);
-			PrintNum(pulse, '*', 1);
-			PrintChar(' ');
-			j = 0;
-		}
-		if ((space > psiDataLong[psixSpace]) /* && ((j > 16) )*/ || (space > psiDataLong[psixSpace] + 1)) { // long gap
-			uint jj = j * 2 + 1;
-			//PrintNum(i*2+1, 'S', 1);
-			PrintNum(jj, 'S', 1);
-			PrintNum(space, '*', 1);
-			PrintChar(' ');
-			j = 0;
-		}
-	}
-#endif
 	j = 0;
-#if 0
-	bool fLastWasData = false;
-	bool fLastWasSpaceLong = false;
-	if (fPrintHex) {
-		PrintChar(' ');
-		j = 0;
-		byte hexData = 0;
-		for (uint i=0; i < psiCount; i++) {
-			byte pulse = psiNibblePulse(psiNibbles, i);
-			byte space = psiNibbleSpace(psiNibbles, i);
 
-			pulse = ((psiCountData[psixPulse] == 2) && (pulse <= psiDataShort[psixPulse]))
-				? 0 : ((pulse <= psiDataLong[psixPulse]) ? 1 : pulse);
-			space = ((psiCountData[psixSpace] == 2) && (space <= psiDataShort[psixSpace]))
-				? 0 : ((space <= psiDataLong[psixSpace]) ? 1 : space);
-			if (fLastWasSpaceLong && !(space > psiDataLong[psixSpace])) {
-				Serial.println();
-				fLastWasSpaceLong = false;
-			}
-			if (pulse > psiDataLong[psixPulse]) {
-				if (fLastWasData) {
-					Serial.print(hexData,HEX);
-					PrintChar(' ');
-				}
-				Serial.print(pulse,HEX);
-				fLastWasData = false;
-			}
-			else if (psiCountData[psixPulse] != 1) {
-				if (!fLastWasData) {
-					PrintChar(' ');
-					hexData = 0;
-					j = 0;
-				}
-				hexData = (hexData << 1) | (pulse & 1);
-				j++;
-				//Serial.print(pulse,HEX);
-				if (j > 7) {
-					//PrintChar(' ');
-					Serial.print(hexData,HEX);
-					hexData = 0;
-					j = 0;
-				}
-				fLastWasData = true;
-			}
-
-			if (space > psiDataLong[psixSpace]) {
-				if (fLastWasData) {
-					Serial.print(hexData,HEX);
-					PrintChar(' ');
-				}
-				fLastWasSpaceLong = true;
-				Serial.print(space,HEX);
-				fLastWasData = false;
-			}
-			else if (psiCountData[psixSpace] != 1) {
-				if (!fLastWasData) {
-					PrintChar(' ');
-					hexData = 0;
-					j = 0;
-				}
-				//Serial.print(space,HEX);
-				hexData = (hexData << 1) | (space & 1);
-				j++;
-				if (j > 7) {
-					//PrintChar(' ');
-					Serial.print(hexData,HEX);
-					hexData = 0;
-					j = 0;
-				}
-				fLastWasData = true;
-			}
-		}
-	}
-#endif
 	Serial.println();
 	j = 0;
 #endif
+	// prepare for js analysis
+	PrintChar('{');
+	Serial.println();
+	Serial.print(F("minMicro["));
+	PrintNum(psMicroMin[0], 0, 3);
+	for (uint i=1; i < psMinMaxCount; i++) {
+		PrintNum(psMicroMin[i], ',', 3);
+	}
+	PrintChar(']');
+	Serial.println();
+
+	Serial.print(F("maxMicro["));
+	PrintNum(psMicroMax[0], 0, 3);
+	for (uint i=1; i < psMinMaxCount; i++) {
+		PrintNum(psMicroMax[i], ',', 3);
+	}
+	PrintChar(']');
+	Serial.println();
+
 	for (uint i=0; i < psiCount; i++, j++) {
 		byte pulse = psiNibblePulse(psiNibbles, i);
 		byte space = psiNibbleSpace(psiNibbles, i);
@@ -817,6 +732,8 @@ void psiPrint() {
 		}
 	}
 	Serial.println();
+	PrintChar('}');
+	Serial.println();
 }
 
 void psInit(void) {
@@ -829,7 +746,6 @@ void psInit(void) {
  *
  * Lookup/Store timing of pulse and space in psMicroMin/psMicroMax/psiCount array
  * Could use seperate arrays for pulses and spaces but 15 (0x0F for overflow) seems enough
- * Store Header as last entry, footer will come last of normal data...
  */
 static byte psNibbleIndex(uint pulse, uint space) {
 	byte psNibble = 0;
@@ -854,10 +770,9 @@ static byte psNibbleIndex(uint pulse, uint space) {
 				// Either a new length or just outside the current boundaries of a current value
 				uint k;
 				uint offBy = value;
-				//i = 0;
-				uint tolerance = (value < 500) ? 400 : (value < 1000) ? 200 : ((value < 2000) ? 400 : ((value < 5000) ? 600 : 1000));
-				//uint tolerance = 100;
-				//uint tolerance = (value < 1000) ? 100 : ((value < 2000) ? 200 : ((value < 5000) ? 300 : 500));
+				// this still sux, occasional spikes give new index. 90% Compensated by data/gap split and value merging
+				// uint tolerance = (value < 500) ? 400 : (value < 1000) ? 200 : ((value < 2000) ? 400 : ((value < 5000) ? 600 : 1000));
+				uint tolerance = (value < 700) ? 600 : (value < 1000) ? 200 : ((value < 2000) ? 400 : ((value < 5000) ? 600 : 1000));
 				for (k = 0; k < psMinMaxCount; k++) { // determine closest interval
 					uint offByi = value;
 					if ((value < psMicroMin[k]) && (value + tolerance >= psMicroMax[k])) { // new min?
