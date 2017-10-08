@@ -356,9 +356,7 @@ void psiPrint() {
 	// Todo: start gap max 16, keep last long
 	// End gap max 1, keep last long
 	// ? Rely on pulse/space?: not yet
-	Serial.print(F("Gap Intervals "));
-	PrintNum(psiCountData[psixPulse], 'P', 1);
-	PrintNum(psiCountData[psixSpace], 'S', 1);
+	//Serial.print(F(" Gap Intervals "));
 
 	uint jMaxCount = 0; // likely number of packages
 //	uint jPreStart, jStart, jEnd;
@@ -400,6 +398,10 @@ void psiPrint() {
 		Serial.println(F(" Assume Noise"));
 		return;
 	}
+	PrintChar('{');
+	Serial.println();
+	PrintNum(psiCountData[psixPulse], 'P', 1);
+	PrintNum(psiCountData[psixSpace], 'S', 1);
 	PrintNum(jMaxCount, '#', 1);
 	PrintNum(jMax, '*', 2);
 //	PrintNum(jPreStart, '[', 2);
@@ -409,6 +411,8 @@ void psiPrint() {
 	PrintChar(':');
 	// repeated packages, 1 or 2 pulse data values and 1 or 2 space data values
 	fPrintHex = ((jMax >= 64) || (jMaxCount > 1)) && (psiCountData[psixPulse] <= 2) && (psiCountData[psixSpace] <= 2);
+	//
+	//fPrintHex = 0; // move to JS
 	byte hexData = 0;
 #if 0 // disable try manchester
 		// http://www.atmel.com/images/atmel-9164-manchester-coding-basics_application-note.pdf
@@ -534,6 +538,7 @@ void psiPrint() {
 		uint jDataRepeat = 0;
 		uint j = 0;
 		// try all packages, print last match incl surrounding gaps, continue at first non match
+#if 1 // disable for JS analysis
 		for (uint i = 0; i < jMaxCount; i++) {
 			uint iDataRepeat = 0;
 			uint jLast = 0;
@@ -671,9 +676,10 @@ void psiPrint() {
 				i = iNext;
 			}
 		}
+#endif
 		Serial.println();
-		Serial.print(F("DataRepeat"));
-		PrintNum(jDataRepeat, ' ', 1);
+		Serial.print(F("FrameCount"));
+		PrintNum(jDataRepeat+1, ' ', 1);
 	}
 	j = 0;
 
@@ -681,7 +687,6 @@ void psiPrint() {
 	j = 0;
 #endif
 	// prepare for js analysis
-	PrintChar('{');
 	Serial.println();
 	Serial.print(F("minMicro["));
 	PrintNum(psMicroMin[0], 0, 3);
@@ -699,6 +704,20 @@ void psiPrint() {
 	PrintChar(']');
 	Serial.println();
 
+	if (psiCountData[psixPulse] == 1) {
+		Serial.print(F("p: 0"));
+		Serial.println();
+		Serial.print(F("s: "));
+	}
+	else{
+		if (psiCountData[psixSpace] == 1) {
+			Serial.print(F("p: "));
+		}
+		else {
+			Serial.print(F("ps: "));
+		}
+	}
+	Serial.println();
 	for (uint i=0; i < psiCount; i++, j++) {
 		byte pulse = psiNibblePulse(psiNibbles, i);
 		byte space = psiNibbleSpace(psiNibbles, i);
@@ -732,6 +751,10 @@ void psiPrint() {
 		}
 	}
 	Serial.println();
+	if (psiCountData[psixSpace] == 1) {
+		Serial.print(F("s: 0"));
+		Serial.println();
+	}
 	PrintChar('}');
 	Serial.println();
 }
