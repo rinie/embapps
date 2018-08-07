@@ -283,7 +283,7 @@ void psiPrint() {
 		psiDataLong[ix] = (ix < psixPulseSpace) ? 1 : max(psiDataLong[psixPulse], psiDataLong[psixSpace]);
 		psiCountDataLong[ix] = psixCount[psiDataLong[ix]][ix];
 		psiCountGapMax = 0;
-		for (uint i=psiDataLong[ix] + 1; i < psMinMaxCount; i++) {
+		for (uint i = psiDataLong[ix] + 1; i < psMinMaxCount; i++) {
 			uint psiCount = psixCount[i][ix];
 			if (psiCount > psiCountDataLong[ix]) { // new 1st max frequency, new long
 				if (psiCountDataLong[ix] > psiCountDataShort[ix]) { // Old Long -> new Short only if occurs more
@@ -344,7 +344,9 @@ void psiPrint() {
 		PrintNum(psixCount[i][psixSpace], ',', 1);
 		PrintChar(')');
 		PrintNum(psMicroMin[i], ':', 3);
-		PrintNum(psMicroMax[i], '/', 3);
+		if (psMicroMax[i] != psMicroMin[i]) {
+			PrintNum(psMicroMax[i], '/', 3);
+		}
 		PrintChar(' ');
 	}
 	Serial.print(F("]"));
@@ -538,7 +540,7 @@ void psiPrint() {
 		uint jDataRepeat = 0;
 		uint j = 0;
 		// try all packages, print last match incl surrounding gaps, continue at first non match
-#if 1 // disable for JS analysis
+#if 0 // disable for JS analysis
 		for (uint i = 0; i < jMaxCount; i++) {
 			uint iDataRepeat = 0;
 			uint jLast = 0;
@@ -676,10 +678,10 @@ void psiPrint() {
 				i = iNext;
 			}
 		}
-#endif
 		Serial.println();
 		Serial.print(F("FrameCount"));
 		PrintNum(jDataRepeat+1, ' ', 1);
+#endif
 	}
 	j = 0;
 
@@ -687,7 +689,7 @@ void psiPrint() {
 	j = 0;
 #endif
 	// prepare for js analysis
-	Serial.println();
+//	Serial.println();
 	Serial.print(F("minMicro["));
 	PrintNum(psMicroMin[0], 0, 3);
 	for (uint i=1; i < psMinMaxCount; i++) {
@@ -704,6 +706,24 @@ void psiPrint() {
 	PrintChar(']');
 	Serial.println();
 
+#if 1	// pulseCount and spaceCount
+	Serial.print(F("pulseCnt["));
+	PrintNum(psixCount[0][psixPulse], 0, 3);
+	for (uint i=1; i < psMinMaxCount; i++) {
+		PrintNum(psixCount[i][psixPulse], ',', 3);
+	}
+	PrintChar(']');
+	Serial.println();
+
+	Serial.print(F("spaceCnt["));
+	PrintNum(psixCount[0][psixSpace], 0, 3);
+	for (uint i=1; i < psMinMaxCount; i++) {
+		PrintNum(psixCount[i][psixSpace], ',', 3);
+	}
+	PrintChar(']');
+	Serial.println();
+#endif
+#if 0 // js disable smart ps/p/s guess
 	if (psiCountData[psixPulse] == 1) {
 		Serial.print(F("p: 0"));
 		Serial.println();
@@ -717,20 +737,25 @@ void psiPrint() {
 			Serial.print(F("ps: "));
 		}
 	}
+#else
+	Serial.print(F("ps: "));
+#endif
 	Serial.println();
 	for (uint i=0; i < psiCount; i++, j++) {
 		byte pulse = psiNibblePulse(psiNibbles, i);
 		byte space = psiNibbleSpace(psiNibbles, i);
 
+#if 0	// js disable data rounding
 		pulse = ((psiCountData[psixPulse] == 2) && (pulse <= psiDataShort[psixPulse]))
 			? 0 : ((pulse <= psiDataLong[psixPulse]) ? 1 : pulse);
 		space = ((psiCountData[psixSpace] == 2) && (space <= psiDataShort[psixSpace]))
 			? 0 : ((space <= psiDataLong[psixSpace]) ? 1 : space);
-
-		if ((pulse > psiDataLong[psixPulse]) && ((j > 16))) { // sync pulse
+#endif
+		if ((pulse > psiDataLong[psixPulse]) && ((j > 32))) { // sync pulse
 			Serial.println();
 			j = 0;
 		}
+#if 0	// js disable smart data guess
 		if (pulse > psiDataLong[psixPulse]) {
 			Serial.print(pulse,HEX);
 		}
@@ -744,17 +769,22 @@ void psiPrint() {
 		else if (psiCountData[psixSpace] != 1) {
 			Serial.print(space,HEX);
 		}
-
-		if ((space > psiDataLong[psixSpace]) && ((j > 16))) { // long gap
+#else
+		Serial.print(pulse,HEX);
+		Serial.print(space,HEX);
+#endif
+		if ((space > psiDataLong[psixSpace]) && ((j > 32))) { // long gap
 			Serial.println();
 			j = 0;
 		}
 	}
 	Serial.println();
+#if 0	// js disable smart data guess
 	if (psiCountData[psixSpace] == 1) {
 		Serial.print(F("s: 0"));
 		Serial.println();
 	}
+#endif
 	PrintChar('}');
 	Serial.println();
 }
@@ -867,7 +897,6 @@ static byte psNibbleIndex(uint pulse, uint space) {
 	static uint32_t startSignal;
 	static uint32_t startSignalm;
 	static uint32_t lastSignal = 0;
-	static uint lastPulseDur = 0;
 	static bool fCheckClear = false;
 #endif
 
@@ -896,7 +925,14 @@ static void processReady() {
 	psInit();
 }
 
+/*
+ * processBitRkr
+ *
+ * Interface to external code for measuring pulse/space lengths
+ * calls psNibbleIndex(pulseTime, spaceTime) to compute pulse/space nibble index
+ */
 bool processBitRkr(uint16_t pulse_dur, uint8_t signal, uint8_t rssi) {
+	static uint lastPulseDur = 0;
 	if (pulse_dur > 1) {
 		if ((pulse_dur > 75) && (pulse_dur < EDGE_TIMEOUT)){
 			if (psCount == 0) {
@@ -909,7 +945,26 @@ bool processBitRkr(uint16_t pulse_dur, uint8_t signal, uint8_t rssi) {
 			}
 			if (psCount & 1) {	// Odd means pulse and space, so pulse_dur is space
 				if (psiCount < NRELEMENTS(psiNibbles)) {
+#if 1
+					static uint firstPulseDur = 0;
+					static uint firstSpaceDur = 0;
+					if (psCount <= 3) {
+						if (psCount <= 1) {
+								firstPulseDur = lastPulseDur;
+								firstSpaceDur = pulse_dur;
+						}
+						else { // first timing can be partial noise
+							psiNibbles[1] = psNibbleIndex(lastPulseDur, pulse_dur);
+							psiNibbles[0] = psNibbleIndex(firstPulseDur, firstSpaceDur);
+							psiCount = 2;
+						}
+					}
+					else {
+						psiNibbles[psiCount++] = psNibbleIndex(lastPulseDur, pulse_dur);
+					}
+#else
 					psiNibbles[psiCount++] = psNibbleIndex(lastPulseDur, pulse_dur);
+#endif
 					if (psiCount >=  NRELEMENTS(psiNibbles)) {
 						processReady();
 						return false;
