@@ -126,9 +126,9 @@ typedef unsigned int uint;
 
 uint psiCount;
 byte psMinMaxCount = 0;
-
+#define JS_OUTPUT	// prepare easy js import
 #define PSI_OVERFLOW 0x0F
-#define PS_MICRO_ELEMENTS 8
+#define PS_MICRO_ELEMENTS 15
 uint psMicroMin[PS_MICRO_ELEMENTS]; // nibble index, 0x0F is overflow so max 15
 uint psMicroMax[PS_MICRO_ELEMENTS]; // nibble index, 0x0F is overflow so max 15
 
@@ -416,126 +416,6 @@ void psiPrint() {
 	//
 	//fPrintHex = 0; // move to JS
 	byte hexData = 0;
-#if 0 // disable try manchester
-		// http://www.atmel.com/images/atmel-9164-manchester-coding-basics_application-note.pdf
-		// Atmel http://www.atmel.com/Images/doc9164.pdf
-		// Timing Based Manchester Decode
-	bool fTryManchester = (psiCountData[psixPulse] == 2) && (psiCountData[psixSpace] == 2);
-	bool fDoubleInvertedBits = false; //my Oregon Scientific V2 sensor
-	if (fTryManchester) {
-		for (uint j = 0; j < jMaxCount; j++) {
-			bool fLastWasData = false;
-			bool fLastWasLong = false;
-			byte hexData = 0;
-			byte nHexData = 0;
-			uint jDataLen = jDataEnd[j] - jDataStart[j] + 1;
-			uint k;
-			byte psJJPrev = 1;
-			byte bitVal;
-			byte prevBitVal;
-			boolean fSecondBit = false;
-
-			// find start of long->short crossing
-			for (k = 0; k < jDataLen; k++) {
-				uint jj = jDataStart[j] + k;
-				uint ix = (jj & 1) ? psixSpace : psixPulse;
-				byte psJJ = (jj & 1) ? psiNibbleSpace(psiNibbles, jj/2) : psiNibblePulse(psiNibbles, jj/2);
-				psJJ = ((psiCountData[ix] <= 2) && (psJJ <= psiDataShort[ix]))
-					? 0 : ((psJJ <= psiDataLong[ix]) ? 1 : psJJ);
-				if (psJJ == 0) {
-					bitVal = (ix == psixPulse) ? 1 : 0;
-					psJJPrev = 0;
-					break;
-				}
-			}
-			//PrintNum(k, 'M', 2);
-			if ((psJJPrev == 0) && k > 8) {
-				PrintNum(k, 'M', 2);
-				for (;k < jDataLen; k++) {
-					uint jj = jDataStart[j] + k;
-					uint ix = (jj & 1) ? psixSpace : psixPulse;
-					byte psJJ = (jj & 1) ? psiNibbleSpace(psiNibbles, jj/2) : psiNibblePulse(psiNibbles, jj/2);
-					psJJ = ((psiCountData[ix] <= 2) && (psJJ <= psiDataShort[ix]))
-						? 0 : ((psJJ <= psiDataLong[ix]) ? 1 : psJJ);
-					// Compare stored count value with T (0)
-					if (psJJ == 0) {
-						// Capture next edge and make sure this value also = T (else error)
-						if (k + 1 < jDataLen) {
-							k++;
-							jj = jDataStart[j] + k;
-							ix = (jj & 1) ? psixSpace : psixPulse;
-							psJJ = (jj & 1) ? psiNibbleSpace(psiNibbles, jj/2) : psiNibblePulse(psiNibbles, jj/2);
-							psJJ = ((psiCountData[ix] <= 2) && (psJJ <= psiDataShort[ix]))
-								? 0 : ((psJJ <= psiDataLong[ix]) ? 1 : psJJ);
-							if (psJJ == 0) {
-								// Next bit = current bit
-								bitVal = (bitVal) ? 1 : 0;
-								if (fDoubleInvertedBits) {
-									if (fSecondBit) {
-										if (bitVal == prevBitVal) {
-											break; // no DoubleInvertedBits
-										}
-										fSecondBit = false;
-									}
-									else {
-										prevBitVal = bitVal;
-										fSecondBit = true;
-										continue; // only second bit is used for value
-									}
-								}
-								hexData = (hexData << 1) | (bitVal & 1);
-								nHexData++;
-								if (nHexData > 7) {
-									//Serial.print(hexData, HEX);
-									PrintNumHex(hexData, 0, 2);
-									hexData = 0;
-									nHexData = 0;
-								}
-							}
-							else {
-								break; // no manchester
-							}
-						}
-					}
-					else if (psJJ == 1) {
-						// Next bit = opposite of current bit
-						bitVal = (bitVal) ? 0 : 1;
-						if (fDoubleInvertedBits) {
-							if (fSecondBit) {
-								if (bitVal == prevBitVal) {
-									break; // no DoubleInvertedBits
-								}
-								fSecondBit = false;
-							}
-							else {
-								prevBitVal = bitVal;
-								fSecondBit = true;
-								continue; // only second bit is used for value
-							}
-						}
-						// Return next bit
-						hexData = (hexData << 1) | (bitVal & 1);
-						nHexData++;
-						if (nHexData > 7) {
-							//Serial.print(hexData, HEX);
-							PrintNumHex(hexData, 0, 2);
-							hexData = 0;
-							nHexData = 0;
-						}
-				}
-			}
-			fLastWasData = nHexData > 0;
-			if (fPrintHex && fLastWasData) {
-				//Serial.print(hexData,HEX);
-				PrintNumHex(hexData, 0, 2);
-				PrintChar(' ');
-				fLastWasData = false;
-			}
-			Serial.println();
-		}
-	}
-	}
-#endif
 	if (jMaxCount > 1) { //assume repeated packages
 		uint jDataRepeat = 0;
 		uint j = 0;
@@ -688,40 +568,39 @@ void psiPrint() {
 	Serial.println();
 	j = 0;
 #endif
+#ifdef JS_OUTPUT
+	Serial.println(F("`,"));
+#endif
 	// prepare for js analysis
 //	Serial.println();
-	Serial.print(F("minMicro["));
+	Serial.print(F("minMicro: ["));
 	PrintNum(psMicroMin[0], 0, 3);
 	for (uint i=1; i < psMinMaxCount; i++) {
 		PrintNum(psMicroMin[i], ',', 3);
 	}
-	PrintChar(']');
-	Serial.println();
+	Serial.println(F("],"));
 
-	Serial.print(F("maxMicro["));
+	Serial.print(F("maxMicro: ["));
 	PrintNum(psMicroMax[0], 0, 3);
 	for (uint i=1; i < psMinMaxCount; i++) {
 		PrintNum(psMicroMax[i], ',', 3);
 	}
-	PrintChar(']');
-	Serial.println();
+	Serial.println(F("],"));
 
 #if 1	// pulseCount and spaceCount
-	Serial.print(F("pulseCnt["));
+	Serial.print(F("pulseCnt: ["));
 	PrintNum(psixCount[0][psixPulse], 0, 3);
 	for (uint i=1; i < psMinMaxCount; i++) {
 		PrintNum(psixCount[i][psixPulse], ',', 3);
 	}
-	PrintChar(']');
-	Serial.println();
+	Serial.println(F("],"));
 
-	Serial.print(F("spaceCnt["));
+	Serial.print(F("spaceCnt: ["));
 	PrintNum(psixCount[0][psixSpace], 0, 3);
 	for (uint i=1; i < psMinMaxCount; i++) {
 		PrintNum(psixCount[i][psixSpace], ',', 3);
 	}
-	PrintChar(']');
-	Serial.println();
+	Serial.println(F("],"));
 #endif
 #if 0 // js disable smart ps/p/s guess
 	if (psiCountData[psixPulse] == 1) {
@@ -741,6 +620,9 @@ void psiPrint() {
 	Serial.print(F("ps: "));
 #endif
 	Serial.println();
+#ifdef JS_OUTPUT
+	PrintChar('\'');
+#endif
 	for (uint i=0; i < psiCount; i++, j++) {
 		byte pulse = psiNibblePulse(psiNibbles, i);
 		byte space = psiNibbleSpace(psiNibbles, i);
@@ -751,8 +633,13 @@ void psiPrint() {
 		space = ((psiCountData[psixSpace] == 2) && (space <= psiDataShort[psixSpace]))
 			? 0 : ((space <= psiDataLong[psixSpace]) ? 1 : space);
 #endif
-		if ((pulse > psiDataLong[psixPulse]) && ((j > 32))) { // sync pulse
+		if ((pulse > psiDataLong[psixPulse]) && ((j > 16))) { // sync pulse
+#ifndef JS_OUTPUT
 			Serial.println();
+#else
+			Serial.println(F("\'"));
+			Serial.print(F("+'"));
+#endif
 			j = 0;
 		}
 #if 0	// js disable smart data guess
@@ -773,20 +660,31 @@ void psiPrint() {
 		Serial.print(pulse,HEX);
 		Serial.print(space,HEX);
 #endif
-		if ((space > psiDataLong[psixSpace]) && ((j > 32))) { // long gap
+		if ((space > psiDataLong[psixSpace]) && ((j > 16))) { // long gap
+#ifndef JS_OUTPUT
 			Serial.println();
+#else
+			Serial.println(F("\'"));
+			Serial.print(F("+'"));
+#endif
 			j = 0;
 		}
 	}
-	Serial.println();
+#ifndef JS_OUTPUT
+			Serial.println();
+#else
+			Serial.println(F("\',"));
+#endif
 #if 0	// js disable smart data guess
 	if (psiCountData[psixSpace] == 1) {
 		Serial.print(F("s: 0"));
 		Serial.println();
 	}
 #endif
-	PrintChar('}');
-	Serial.println();
+	Serial.println(F("},"));
+#ifdef JS_OUTPUT
+	Serial.println(F("{ comment:`"));
+#endif
 }
 
 void psInit(void) {
@@ -825,18 +723,18 @@ static byte psNibbleIndex(uint pulse, uint space) {
 				uint offBy = value;
 				// this still sux, occasional spikes give new index. 90% Compensated by data/gap split and value merging
 				// uint tolerance = (value < 500) ? 400 : (value < 1000) ? 200 : ((value < 2000) ? 400 : ((value < 5000) ? 600 : 1000));
-				uint tolerance = (value < 700) ? 600 : (value < 1000) ? 200 : ((value < 2000) ? 400 : ((value < 5000) ? 600 : 1000));
+				uint tolerance = (value < 400) ? 300 : (value < 800) ? 400 : (value < 1200) ? 200 : ((value < 2000) ? 400 : ((value < 5000) ? 600 : 2000));
 				for (k = 0; k < psMinMaxCount; k++) { // determine closest interval
 					uint offByi = value;
-					if ((value < psMicroMin[k]) && (value + tolerance >= psMicroMax[k])) { // new min?
-						offByi = psMicroMin[k] - value;
+					if ((value > psMicroMax[k]) && (value <= psMicroMin[k] + tolerance)) { // new max
+						offByi = value - psMicroMax[k];
 						if (offByi < offBy) {
 							i = k;
 							offBy = offByi;
 						}
 					}
-					else if ((value > psMicroMax[k]) && (value <= psMicroMin[k] + tolerance)) { // new max
-						offByi = value - psMicroMax[k];
+					else if ((value < psMicroMin[k]) && (value + tolerance >= psMicroMax[k])) { // new min?
+						offByi = psMicroMin[k] - value;
 						if (offByi < offBy) {
 							i = k;
 							offBy = offByi;
@@ -902,7 +800,7 @@ static byte psNibbleIndex(uint pulse, uint space) {
 
 //#include "analysepacket.h"
 static void processReady() {
-	if (psCount > 64) {
+	if (psCount > 48) {
 		uint32_t now = millis();
 		uint32_t nowm = micros();
 		// terminate recording
@@ -933,6 +831,10 @@ static void processReady() {
  */
 bool processBitRkr(uint16_t pulse_dur, uint8_t signal, uint8_t rssi) {
 	static uint lastPulseDur = 0;
+#if 1 //add first pulse/space pair last...
+	static uint firstPulseDur = 0;
+	static uint firstSpaceDur = 0;
+#endif
 	if (pulse_dur > 1) {
 		if ((pulse_dur > 75) && (pulse_dur < EDGE_TIMEOUT)){
 			if (psCount == 0) {
@@ -946,18 +848,10 @@ bool processBitRkr(uint16_t pulse_dur, uint8_t signal, uint8_t rssi) {
 			if (psCount & 1) {	// Odd means pulse and space, so pulse_dur is space
 				if (psiCount < NRELEMENTS(psiNibbles)) {
 #if 1
-					static uint firstPulseDur = 0;
-					static uint firstSpaceDur = 0;
-					if (psCount <= 3) {
-						if (psCount <= 1) {
-								firstPulseDur = lastPulseDur;
-								firstSpaceDur = pulse_dur;
-						}
-						else { // first timing can be partial noise
-							psiNibbles[1] = psNibbleIndex(lastPulseDur, pulse_dur);
-							psiNibbles[0] = psNibbleIndex(firstPulseDur, firstSpaceDur);
-							psiCount = 2;
-						}
+					if (psCount <= 1) { // first timing can be partial noise
+							firstPulseDur = lastPulseDur;
+							firstSpaceDur = pulse_dur;
+							psiCount = 1;
 					}
 					else {
 						psiNibbles[psiCount++] = psNibbleIndex(lastPulseDur, pulse_dur);
@@ -966,11 +860,17 @@ bool processBitRkr(uint16_t pulse_dur, uint8_t signal, uint8_t rssi) {
 					psiNibbles[psiCount++] = psNibbleIndex(lastPulseDur, pulse_dur);
 #endif
 					if (psiCount >=  NRELEMENTS(psiNibbles)) {
+#if 1
+						psiNibbles[0] = psNibbleIndex(firstPulseDur, firstSpaceDur);
+#endif
 						processReady();
 						return false;
 					}
 				}
 				else {
+#if 1
+					psiNibbles[0] = psNibbleIndex(firstPulseDur, firstSpaceDur);
+#endif
 					processReady();
 					return false;
 				}
@@ -982,6 +882,9 @@ bool processBitRkr(uint16_t pulse_dur, uint8_t signal, uint8_t rssi) {
 		}
 	}
 	if ((!rssi) && (pulse_dur == 1)) { // footer, fake pulse, print and reset
+#if 1
+		psiNibbles[0] = psNibbleIndex(firstPulseDur, firstSpaceDur);
+#endif
 		processReady();
 	}
 	return false; // return true to skip decoders...
